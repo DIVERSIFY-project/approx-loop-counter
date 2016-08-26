@@ -1,23 +1,26 @@
 package fr.inria.approxloopcounter;
 
-import spoon.processing.AbstractProcessor;
 import spoon.reflect.code.*;
 import spoon.reflect.reference.CtArrayTypeReference;
 import spoon.reflect.reference.CtTypeReference;
 import spoon.reflect.visitor.filter.TypeFilter;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 
 /**
- * Created by elmarce on 30/06/16.
+ * Created by elmarce on 05/08/16.
  */
-public class ApproximatedLoopCounter extends AbstractProcessor<CtLoop> {
+public class ApproxLoopFinder {
 
-    private int loopCount = 0;
-    private int approximableLoopCount = 0;
+    private boolean hasInnerLoop = false;
+
+    private ArrayList<String> errors;
 
     private static final HashSet<String> numericTypes;
+
+    private ArrayList<CtArrayAccess> arrayAccesses;
 
     static {
         numericTypes = new HashSet<String>();
@@ -40,23 +43,74 @@ public class ApproximatedLoopCounter extends AbstractProcessor<CtLoop> {
         numericTypes.add(short.class.getCanonicalName());
     }
 
-    public void process(CtLoop loop) {
-        //Detect array assignment
-        if (loop.getBody() instanceof CtBlock) {
-            CtBlock block = (CtBlock) loop.getBody();
-            for (int i = 0; i < block.getStatements().size(); i++) {
-                CtStatement st = block.getStatement(i);
-                if (st instanceof CtAssignment && !(st instanceof CtOperatorAssignment)) {
-                    CtExpression left = ((CtAssignment) st).getAssigned();
-                    if (left instanceof CtArrayAccess && isSignalArray((CtArrayAccess) left, loop)) {
-                        approximableLoopCount++;
-                    }
-                }
-            }
-        }
-        loopCount++;
+    public ApproxLoopFinder() {
+        errors = new ArrayList<String>();
+        arrayAccesses = new ArrayList<CtArrayAccess>();
     }
 
+    public boolean isApproximable(CtLoop loop) {
+        hasInnerLoop = false;
+        //Innermost loops containing exactly one array assignment
+        if (arrayAssignmentsInBody(loop.getBody(), loop, 0) == 1) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Find Array Assignments in single Statements
+     *
+     * @param st
+     * @param loop
+     * @return
+     */
+    private int arrayAssignmentsInSingleStatement(CtStatement st, CtLoop loop) {
+        if (st instanceof CtAssignment && !(st instanceof CtOperatorAssignment)) {
+            CtExpression left = ((CtAssignment) st).getAssigned();
+            if (left instanceof CtArrayAccess && isSignalArray((CtArrayAccess) left, loop)) {
+                arrayAccesses.add((CtArrayAccess) left);
+                return 1;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Find array assignments in a list of statements
+     *
+     * @param body
+     * @param loop
+     * @return
+     */
+    private int arrayAssignmentsInBody(CtStatement body, CtLoop loop, int result) {
+        if (body == null || body.getElements(new TypeFilter<CtLoop>(CtLoop.class)).size() > 0
+                || result > 2 || hasInnerLoop) {
+            hasInnerLoop = true;
+            return 0; //Innermost loop
+        }
+
+        CtBlock block;
+        if (body instanceof CtBlock) block = (CtBlock) body;
+        else return arrayAssignmentsInSingleStatement(body, loop);
+
+        int i = 0;
+        while (i < block.getStatements().size() && result < 2 && !hasInnerLoop) {
+            CtStatement st = block.getStatement(i);
+            //If and Switchs
+            if (st instanceof CtIf) {
+                result += arrayAssignmentsInBody(((CtIf) st).getThenStatement(), loop, result);
+                result += arrayAssignmentsInBody(((CtIf) st).getElseStatement(), loop, result);
+            } else if (st instanceof CtSwitch) {
+                for (Object ct : ((CtSwitch) st).getCases()) {
+                    CtCase c = (CtCase) ct;
+                    for (CtStatement caseSt : c.getStatements())
+                        result += arrayAssignmentsInBody(caseSt, loop, result);
+                }
+            } else if (result < 2 && !hasInnerLoop) result += arrayAssignmentsInSingleStatement(st, loop);
+            i++;
+        }
+        return result;
+    }
 
     /**
      * Indicates if the access is a signal array.
@@ -89,20 +143,17 @@ public class ApproximatedLoopCounter extends AbstractProcessor<CtLoop> {
 
             //See if it is directly relate to the loop expression.
             //In the future calculate the def-use data flow from the index to the loop expression
-            for (CtVariableAccess varAccess : indexAccesses) {
-                for (CtVariableAccess a : loopExpAccesses) {
-                    if (a.getVariable().equals(varAccess.getVariable())) {
-                        return true;
-                    }
-                }
-            }
+            for (CtVariableAccess varAccess : indexAccesses)
+                for (CtVariableAccess a : loopExpAccesses)
+                    if (a.getVariable().equals(varAccess.getVariable())) return true;
         }
         return false;
     }
 
     private List<CtVariableAccess> accessOfExpression(CtExpression expression) {
+        if (expression == null) return new ArrayList<>();//Special case when the loop has no increment expression
         //Detect all variables in the index expression of the array
-        return expression.getElements(new TypeFilter<CtVariableAccess>(CtVariableAccess.class));
+        return expression.getElements(new TypeFilter<>(CtVariableAccess.class));
     }
 
     private CtExpression getLoopExpression(CtLoop element) {
@@ -125,17 +176,27 @@ public class ApproximatedLoopCounter extends AbstractProcessor<CtLoop> {
      * @return Boolean if the access is of primitive type numeric
      */
     private boolean isNumericPrimitiveType(CtTypeReference type) {
+        if (type == null) return false;
+
         if (type instanceof CtArrayTypeReference) {
             return isNumericPrimitiveType(((CtArrayTypeReference) type).getComponentType());
         }
-        return numericTypes.contains(type.getQualifiedName());
+        String qName = null;
+
+        try {
+            qName = type.getQualifiedName();
+        } catch (NullPointerException ex) {
+            getErrors().add("Cannot get qualified name of type: " + type.getSimpleName());
+        }
+
+        return qName != null && numericTypes.contains(qName);
     }
 
-    public int getLoopCount() {
-        return loopCount;
+    public ArrayList<String> getErrors() {
+        return errors;
     }
 
-    public int getApproximableLoopCount() {
-        return approximableLoopCount;
+    public CtArrayAccess getArrayAccess(int i) {
+        return arrayAccesses.get(i);
     }
 }
