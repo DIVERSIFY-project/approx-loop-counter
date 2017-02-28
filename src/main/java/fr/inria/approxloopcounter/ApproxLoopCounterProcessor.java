@@ -21,10 +21,6 @@ public class ApproxLoopCounterProcessor extends AbstractProcessor<CtLoop> {
     private int approximableLoopCount = 0;
     private ArrayList<String> approximableLoops;
 
-
-
-
-
     public ApproxLoopCounterProcessor() {
         approximableLoops = new ArrayList<String>();
     }

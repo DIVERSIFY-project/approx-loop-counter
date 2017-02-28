@@ -23,7 +23,7 @@ public class ApproxLoopFinder {
     private ArrayList<CtArrayAccess> arrayAccesses;
 
     static {
-        numericTypes = new HashSet<String>();
+        numericTypes = new HashSet<>();
         numericTypes.add(Integer.class.getCanonicalName());
         numericTypes.add(int.class.getCanonicalName());
 

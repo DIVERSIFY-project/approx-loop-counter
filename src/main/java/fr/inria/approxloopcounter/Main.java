@@ -1,17 +1,13 @@
 package fr.inria.approxloopcounter;
 
 import fr.inria.approxloops.sqlite.RowWrite;
-import org.apache.maven.model.Model;
-import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
-import org.apache.maven.project.MavenProject;
-import org.codehaus.plexus.util.xml.pull.XmlPullParserException;
 import spoon.Launcher;
 import spoon.reflect.declaration.CtType;
 
-import java.io.*;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -37,7 +33,14 @@ public class Main {
     HashMap<String, Row> loopsPerPackage;
 
 
-    public static void main(String[] args) throws IOException, XmlPullParserException {
+    public static void main(String[] args) throws IOException {
+        /*
+        new Main().countLoops(new String[]{
+                "/home/elmarce/MarcelStuff/DATA/APPROX-UNROLL/SOURCE/jsyn-master"});
+        */
+
+        new Main().countLoops(new String[]{
+                "/home/elmarce/MarcelStuff/DATA/APPROX-UNROLL/SOURCE/openimaj-master/image/object-detection"});
 
         /*
         new Main().countLoops(new String[]{
@@ -50,12 +53,10 @@ public class Main {
                 "/home/elmarce/PROJECTS/DATA/lucene-solr-master"
 
         });*/
-
-
     }
 
 
-    private void countLoopsToDB(String dbPath, String path, String projectName) throws IOException, XmlPullParserException {
+    private void countLoopsToDB(String dbPath, String path, String projectName) throws IOException {
         RowWrite rowWrite = new RowWrite(dbPath, "loopsperpackage", "LOOPS", "APPROXIMATE", "PERCENT", "PACKAGE");
         loopsPerPackage = new HashMap<>();
         walk(path);
@@ -74,7 +75,7 @@ public class Main {
         loopsPerPackage.clear();
     }
 
-    private void countLoops(String[] paths) throws IOException, XmlPullParserException {
+    private void countLoops(String[] paths) throws IOException {
         //errors = new ArrayList<>();
         loopsPerPackage = new HashMap<>();
         System.out.println("|Project | Total | Approximable | Percent | ");
